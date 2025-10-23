@@ -53,10 +53,6 @@ Driver::Driver(): rclcpp::Node("adnav_driver"), msg_write_done_(false)
 	// Setup parameters for the node
 	setupParamService();
 
-	// Get the name of the node
-	node_name_ = this->get_name();
-	RCLCPP_INFO(this->get_logger(), "\nNamespace: %s\n", node_name_.c_str());
-
 	// Create timers for callbacks
 	publish_timer_ = this->create_wall_timer(
       	publish_timer_interval_ , std::bind(&Driver::publishTimerCallback, this), publishing_group_);
@@ -168,16 +164,16 @@ void Driver::requestDeviceInfo() {
  */
 void Driver::createPublishers() {
 	// Creating the ROS2 Publishers
-	imu_pub_ = this->create_publisher<sensor_msgs::msg::Imu>(std::string(node_name_ + "/imu"), 10);
-	imu_raw_pub_ = this->create_publisher<sensor_msgs::msg::Imu>(std::string(node_name_ + "/imu_raw"), 10);
-	nav_sat_fix_pub_ = this->create_publisher<sensor_msgs::msg::NavSatFix>(std::string(node_name_ + "/nav_sat_fix"), 10);
-	magnetic_field_pub_ = this->create_publisher<sensor_msgs::msg::MagneticField>(std::string(node_name_ + "/magnetic_field"), 10);
-	barometric_pressure_pub_ = this->create_publisher<sensor_msgs::msg::FluidPressure>(std::string(node_name_ + "/barometric_pressure"), 10);
-	temperature_pub_ = this->create_publisher<sensor_msgs::msg::Temperature>(std::string(node_name_ + "/temperature"), 10);
-	twist_pub_ = this->create_publisher<geometry_msgs::msg::Twist>(std::string(node_name_ + "/twist"), 10);
-	pose_pub_ = this->create_publisher<geometry_msgs::msg::Pose>(std::string(node_name_ + "/pose"), 10);
-	system_status_pub_ = this->create_publisher<diagnostic_msgs::msg::DiagnosticStatus>(std::string(node_name_ + "/system_status"), 10);
-	filter_status_pub_ = this->create_publisher<diagnostic_msgs::msg::DiagnosticStatus>(std::string(node_name_ + "/filter_status"), 10);
+	imu_pub_ = this->create_publisher<sensor_msgs::msg::Imu>("~/imu", 10);
+	imu_raw_pub_ = this->create_publisher<sensor_msgs::msg::Imu>("~/imu_raw", 10);
+	nav_sat_fix_pub_ = this->create_publisher<sensor_msgs::msg::NavSatFix>("~/nav_sat_fix", 10);
+	magnetic_field_pub_ = this->create_publisher<sensor_msgs::msg::MagneticField>("~/magnetic_field", 10);
+	barometric_pressure_pub_ = this->create_publisher<sensor_msgs::msg::FluidPressure>("~/barometric_pressure", 10);
+	temperature_pub_ = this->create_publisher<sensor_msgs::msg::Temperature>("~/temperature", 10);
+	twist_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("~/twist", 10);
+	pose_pub_ = this->create_publisher<geometry_msgs::msg::Pose>("~/pose", 10);
+	system_status_pub_ = this->create_publisher<diagnostic_msgs::msg::DiagnosticStatus>("~/system_status", 10);
+	filter_status_pub_ = this->create_publisher<diagnostic_msgs::msg::DiagnosticStatus>("~/filter_status", 10);
 }
 
 /**
@@ -185,7 +181,7 @@ void Driver::createPublishers() {
  */
 void Driver::createServices() {
 	packet_period_srv_ = this->create_service<adnav_interfaces::srv::PacketPeriods>(
-		(node_name_ + "/packet_periods"),
+		"~/packet_periods",
 		std::bind(
 			&Driver::srvPacketPeriods,
 			this,
@@ -195,7 +191,7 @@ void Driver::createServices() {
 		service_group_);
 
 	packet_period_timer_srv_ = this->create_service<adnav_interfaces::srv::PacketTimerPeriod>(
-		(node_name_ + "/packet_timer_period"),
+		"~/packet_timer_period",
 		std::bind(
 			&Driver::srvPacketTimerPeriod,
 			this,
@@ -205,7 +201,7 @@ void Driver::createServices() {
 		service_group_);
 
 	request_packet_srv_ = this->create_service<adnav_interfaces::srv::RequestPackets>(
-		(node_name_ + "/request_packet"),
+		"~/request_packet",
 		std::bind(
 			&Driver::srvRequestPackets,
 			this,
@@ -215,7 +211,7 @@ void Driver::createServices() {
 		service_group_);
 
 	ntrip_srv_ = this->create_service<adnav_interfaces::srv::Ntrip>(
-		(node_name_ + "/ntrip"),
+		"~/ntrip",
 		std::bind(
 			&Driver::srvNtrip,
 			this,

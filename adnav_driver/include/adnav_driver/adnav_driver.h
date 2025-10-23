@@ -141,9 +141,6 @@ class Driver : public rclcpp::Node  // Inheriting gives every "this->" as a poin
     // String to hold frame_id
     std::string frame_id_ = "imu_link";
 
-    // String to hold node name.
-    std::string node_name_;
-
     // device communication settings
     std::unique_ptr<adnav::Communicator> communicator_;
     adnav_connections_data_t comms_data_;
