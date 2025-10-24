@@ -473,6 +473,10 @@ void Driver::setupParams() {
 	this->declare_parameter<std::string>("log_path", "~/.ros/log/", log_path_description);
 	log_path_ = this->get_parameter("log_path").as_string();
 
+	// Ensure `log_path_` ends with a trailing '/' when non-empty
+	if (!log_path_.empty() && log_path_.back() != '/') {
+	    log_path_.push_back('/');
+	}
 
 	// Comms Select - Read only
 	rcl_interfaces::msg::ParameterDescriptor comms_select_description = rcl_interfaces::msg::ParameterDescriptor();
