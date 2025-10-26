@@ -28,6 +28,7 @@ find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(geographic_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(adnav_interfaces REQUIRED)
@@ -55,6 +56,7 @@ set(DEPENDENCIES
   "geometry_msgs"
   "tf2"
   "adnav_interfaces"
+  "geographic_msgs"
 )
 
 set(EXECUTABLE_NAME "adnav_driver")

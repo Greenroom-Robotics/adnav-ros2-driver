@@ -67,12 +67,16 @@
 #include <sensor_msgs/msg/time_reference.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <geometry_msgs/msg/twist.hpp>
+#include <geometry_msgs/msg/twist_stamped.hpp>
 #include <geometry_msgs/msg/pose.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <diagnostic_msgs/msg/diagnostic_array.hpp>
 #include <sensor_msgs/msg/magnetic_field.hpp>
 #include <sensor_msgs/msg/temperature.hpp>
 #include <sensor_msgs/msg/fluid_pressure.hpp>
 #include <std_srvs/srv/empty.hpp>
+#include <geographic_msgs/msg/geo_pose.hpp>
+#include <geographic_msgs/msg/geo_pose_stamped.hpp>
 
 #if defined(WIN32) || defined(_WIN32)
     #pragma comment(lib, "ws2_32.lib")  // Winsock Library
@@ -167,7 +171,11 @@ class Driver : public rclcpp::Node  // Inheriting gives every "this->" as a poin
     sensor_msgs::msg::FluidPressure baro_msg_;
     sensor_msgs::msg::Temperature   temp_msg_;
     geometry_msgs::msg::Twist       twist_msg_;
+    geometry_msgs::msg::TwistStamped twist_stamped_msg_;
+    geometry_msgs::msg::PoseStamped pose_stamped_msg_;
     geometry_msgs::msg::Pose        pose_msg_;
+    geographic_msgs::msg::GeoPose   geo_pose_msg_;
+    geographic_msgs::msg::GeoPoseStamped geo_pose_stamped_msg_;
     diagnostic_msgs::msg::DiagnosticStatus system_status_msg_;
     diagnostic_msgs::msg::DiagnosticStatus filter_status_msg_;
 
@@ -179,7 +187,11 @@ class Driver : public rclcpp::Node  // Inheriting gives every "this->" as a poin
     rclcpp::Publisher<sensor_msgs::msg::FluidPressure>::SharedPtr 			barometric_pressure_pub_;
     rclcpp::Publisher<sensor_msgs::msg::Temperature>::SharedPtr 			temperature_pub_;
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr 				twist_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr 			twist_stamped_pub_;
     rclcpp::Publisher<geometry_msgs::msg::Pose>::SharedPtr 					pose_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr 			pose_stamped_pub_;
+    rclcpp::Publisher<geographic_msgs::msg::GeoPose>::SharedPtr 			geo_pose_pub_;
+    rclcpp::Publisher<geographic_msgs::msg::GeoPoseStamped>::SharedPtr 		geo_pose_stamped_pub_;
     rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticStatus>::SharedPtr 	system_status_pub_;
     rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticStatus>::SharedPtr 	filter_status_pub_;
 

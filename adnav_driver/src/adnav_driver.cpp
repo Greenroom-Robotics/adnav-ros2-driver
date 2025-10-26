@@ -103,6 +103,20 @@ Driver::~Driver() {
 	communicator_->close();
 }
 
+rclcpp::Time time_from_state_packet(const system_state_packet_t& state_packet) {
+	// Create a ROS time from the system state packet timestamp
+	auto sec = state_packet.unix_time_seconds;
+	auto nanosecs = state_packet.microseconds * 1000;
+
+	// Handle possible rollover of nanoseconds
+	if (nanosecs >= 1000000000) {
+		sec += nanosecs / 1000000000;
+		nanosecs = nanosecs % 1000000000;
+	}
+
+	return {static_cast<int32_t>(sec), nanosecs, RCL_ROS_TIME};
+}
+
 /**
  * @brief Function to ask for device information from a Advanced navigation device and wait for its response.
  */
@@ -171,9 +185,11 @@ void Driver::createPublishers() {
 	barometric_pressure_pub_ = this->create_publisher<sensor_msgs::msg::FluidPressure>("~/barometric_pressure", 10);
 	temperature_pub_ = this->create_publisher<sensor_msgs::msg::Temperature>("~/temperature", 10);
 	twist_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("~/twist", 10);
+	twist_stamped_pub_ = this->create_publisher<geometry_msgs::msg::TwistStamped>("~/twist_stamped", 10);
 	pose_pub_ = this->create_publisher<geometry_msgs::msg::Pose>("~/pose", 10);
-	system_status_pub_ = this->create_publisher<diagnostic_msgs::msg::DiagnosticStatus>("~/system_status", 10);
-	filter_status_pub_ = this->create_publisher<diagnostic_msgs::msg::DiagnosticStatus>("~/filter_status", 10);
+	pose_stamped_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("~/pose_stamped", 10);
+	geo_pose_pub_ = this->create_publisher<geographic_msgs::msg::GeoPose>("~/geopose", 10);
+	geo_pose_stamped_pub_ = this->create_publisher<geographic_msgs::msg::GeoPoseStamped>("~/geopose_stamped", 10);
 }
 
 /**
@@ -548,6 +564,7 @@ void Driver::publishTimerCallback() {
 	// PUBLISH MESSAGES
 	nav_sat_fix_pub_->publish(nav_fix_msg_);
 	twist_pub_->publish(twist_msg_);
+	twist_stamped_pub_->publish(twist_stamped_msg_);
 	imu_pub_->publish(imu_msg_);
 	imu_raw_pub_->publish(imu_raw_msg_);
 	system_status_pub_->publish(system_status_msg_);
@@ -556,6 +573,9 @@ void Driver::publishTimerCallback() {
 	barometric_pressure_pub_->publish(baro_msg_);
 	temperature_pub_->publish(temp_msg_);
 	pose_pub_->publish(pose_msg_);
+	pose_stamped_pub_->publish(pose_stamped_msg_);
+	geo_pose_pub_->publish(geo_pose_msg_);
+	geo_pose_stamped_pub_->publish(geo_pose_stamped_msg_);
 
 	RCLCPP_DEBUG(this->get_logger(), "Pub: \t\tMutex: U\tAccess: %d", pub_num_++);
 
@@ -1588,7 +1608,7 @@ void Driver::systemStateRosDecoder(an_packet_t* an_packet) {
 			nav_fix_msg_.position_covariance = { pow(system_state_packet.standard_deviation[1], 2), 0.0, 0.0,
 				0.0, pow(system_state_packet.standard_deviation[0], 2), 0.0,
 				0.0, 0.0, pow(system_state_packet.standard_deviation[2], 2)};
-			nav_fix_msg_.position_covariance_type = nav_fix_msg_.COVARIANCE_TYPE_DIAGONAL_KNOWN;
+			nav_fix_msg_.position_covariance_type = sensor_msgs::msg::NavSatFix::COVARIANCE_TYPE_DIAGONAL_KNOWN;
 
 			llh_.latitude = system_state_packet.latitude * RADIANS_TO_DEGREES;
 			llh_.longitude = system_state_packet.longitude * RADIANS_TO_DEGREES;
@@ -1604,7 +1624,8 @@ void Driver::systemStateRosDecoder(an_packet_t* an_packet) {
 			twist_msg_.angular.x = system_state_packet.angular_velocity[0];
 			twist_msg_.angular.y = system_state_packet.angular_velocity[1];
 			twist_msg_.angular.z = system_state_packet.angular_velocity[2];
-
+			twist_stamped_msg_.twist = twist_msg_;
+			twist_stamped_msg_.header = nav_fix_msg_.header;
 
 			// IMU
 			imu_msg_.header.stamp.sec = system_state_packet.unix_time_seconds;
@@ -1622,10 +1643,9 @@ void Driver::systemStateRosDecoder(an_packet_t* an_packet) {
 			imu_msg_.orientation.w = orientation_[3];
 
 			// POSE Orientation
-			pose_msg_.orientation.x = orientation_[0];
-			pose_msg_.orientation.y = orientation_[1];
-			pose_msg_.orientation.z = orientation_[2];
-			pose_msg_.orientation.w = orientation_[3];
+			pose_msg_.orientation = imu_msg_.orientation;
+			pose_stamped_msg_.pose = pose_msg_;
+			pose_stamped_msg_.header = nav_fix_msg_.header;
 
 			imu_msg_.angular_velocity.x = system_state_packet.angular_velocity[0]; // These the same as the TWIST msg values
 			imu_msg_.angular_velocity.y = system_state_packet.angular_velocity[1];
@@ -1635,6 +1655,13 @@ void Driver::systemStateRosDecoder(an_packet_t* an_packet) {
 			imu_msg_.linear_acceleration.x = system_state_packet.body_acceleration[0];
 			imu_msg_.linear_acceleration.y = system_state_packet.body_acceleration[1];
 			imu_msg_.linear_acceleration.z = system_state_packet.body_acceleration[2];
+
+			geo_pose_msg_.orientation = imu_msg_.orientation;
+			geo_pose_msg_.position.latitude = nav_fix_msg_.latitude;
+		    geo_pose_msg_.position.longitude = nav_fix_msg_.longitude;
+		    geo_pose_msg_.position.altitude = nav_fix_msg_.altitude;
+			geo_pose_stamped_msg_.pose = geo_pose_msg_;
+			geo_pose_stamped_msg_.header = nav_fix_msg_.header;
 
 			// SYSTEM STATUS
 			system_status_msg_.message = "";
