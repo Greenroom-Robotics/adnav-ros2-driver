@@ -50,6 +50,8 @@ Driver::Driver(): rclcpp::Node("adnav_driver"), msg_write_done_(false)
 	// Group for completing incoming services.
 	service_group_		= this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
+	diagnostic_updater_ = std::make_shared<diagnostic_updater::Updater>(this);
+
 	// Setup parameters for the node
 	setupParamService();
 
@@ -78,6 +80,9 @@ Driver::Driver(): rclcpp::Node("adnav_driver"), msg_write_done_(false)
 
 	// Send current setup of timer period, and packet periods to the device.
 	deviceSetup();
+
+	diagnostic_updater_->add("System Status", this, &Driver::system_status_diagnostic);
+	diagnostic_updater_->add("Filter Status", this, &Driver::filter_status_diagnostic);
 
 	RCLCPP_INFO(this->get_logger(), "Your Advanced Navigation ROS driver is currently running\nPress Ctrl-C to interrupt\n");
 }
@@ -567,8 +572,6 @@ void Driver::publishTimerCallback() {
 	twist_stamped_pub_->publish(twist_stamped_msg_);
 	imu_pub_->publish(imu_msg_);
 	imu_raw_pub_->publish(imu_raw_msg_);
-	system_status_pub_->publish(system_status_msg_);
-	filter_status_pub_->publish(filter_status_msg_);
 	magnetic_field_pub_->publish(mag_field_msg_);
 	barometric_pressure_pub_->publish(baro_msg_);
 	temperature_pub_->publish(temp_msg_);
@@ -611,34 +614,128 @@ void Driver::RestartReader() {
 		read_timer_interval_, std::bind(&Driver::recievePackets, this), reading_group_);
 }
 
-//~~~~~~ Logging Functions
+//~~~~~~ Diagnostic Functions
 
-/**
- * @brief Function to log an error message into the ROS system status and to the Error Logger
- *
- * This function assumes it is being called from a function with thread safe access to the ROS messages.
- *
- * @param errmsg string containing the message to be put into the logger.
- */
-void Driver::statusErrLog(const std::string& errmsg) {
+void Driver::system_status_diagnostic(diagnostic_updater::DiagnosticStatusWrapper &stat)
+{
+	if (system_state_packet_.has_value())
+	{
+		auto last_rx_time = time_from_state_packet(system_state_packet_.value());
 
-	system_status_msg_.level = 2; // ERROR state
-	system_status_msg_.message += errmsg;
-	RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 10000, errmsg.c_str());
+		if (this->get_clock()->now() - last_rx_time < rclcpp::Duration(1, 0))
+		{
+			stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "System State packet timeout");
+			return;
+		}
+
+		stat.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+
+		if (system_state_packet_->system_status.b.system_failure) {
+			stat.add("System", "Fail");
+			stat.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+		}
+		if (system_state_packet_->system_status.b.accelerometer_sensor_failure) {
+			stat.add("Accelerometer", "Fail");
+			stat.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+		}
+		if (system_state_packet_->system_status.b.gyroscope_sensor_failure) {
+			stat.add("Gyroscope", "Fail");
+			stat.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+		}
+		if (system_state_packet_->system_status.b.magnetometer_sensor_failure) {
+			stat.add("Magnetometer", "Fail");
+			stat.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+		}
+		if (system_state_packet_->system_status.b.pressure_sensor_failure) {
+			stat.add("Pressure Sensor", "Fail");
+			stat.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+		}
+		if (system_state_packet_->system_status.b.gnss_failure) {
+			stat.add("GNSS", "Fail");
+			stat.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+		}
+		if (system_state_packet_->system_status.b.accelerometer_over_range) {
+			stat.add("Accelerometer Over Range", "Fail");
+			stat.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+		}
+		if (system_state_packet_->system_status.b.gyroscope_over_range) {
+			stat.add("Gyroscope Over Range", "Fail");
+			stat.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+		}
+		if (system_state_packet_->system_status.b.magnetometer_over_range) {
+			stat.add("Magnetometer", " Over Range");
+			stat.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+		}
+		if (system_state_packet_->system_status.b.pressure_over_range) {
+			stat.add("Pressure Sensor", " Over Range");
+			stat.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+		}
+		if (system_state_packet_->system_status.b.minimum_temperature_alarm) {
+			stat.add("Temperature Alarm", "Minimum Temperature Alarm");
+			stat.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+		}
+		if (system_state_packet_->system_status.b.maximum_temperature_alarm) {
+			stat.add("Temperature Alarm", "Maximum Temperature Alarm");
+			stat.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+		}
+		if (system_state_packet_->system_status.b.internal_data_logging_error) {
+			stat.add("Data Logging", "Internal Error");
+			stat.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+		}
+		if (system_state_packet_->system_status.b.high_voltage_alarm) {
+			stat.add("Power Supply", "High Voltage Alarm");
+			stat.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+		}
+		if (system_state_packet_->system_status.b.gnss_antenna_fault) {
+			stat.add("GNSS Antenna", "Fault Detected");
+			stat.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+		}
+		if (system_state_packet_->system_status.b.serial_port_overflow_alarm) {
+			stat.add("Serial Port", "Data Overflow");
+			stat.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+		}
+
+		if (stat.level == diagnostic_msgs::msg::DiagnosticStatus::OK) {
+			stat.summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "OK");
+		} else
+		{
+			stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "System Failure Detected");
+		}
+	} else {
+		stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "System State packet not received");
+	}
 }
 
-/**
- * @brief Function to log an warning message into the ROS filter status and to the warning Logger
- *
- * This function assumes it is being called from a function with thread safe access to the ROS messages.
- *
- * @param warnmsg string containing the message to be put into the logger.
- */
-void Driver::statusWarnLog(const std::string& warnmsg) {
+void Driver::filter_status_diagnostic(diagnostic_updater::DiagnosticStatusWrapper &stat)
+{
+	if (system_state_packet_.has_value())
+	{
+		auto last_rx_time = time_from_state_packet(system_state_packet_.value());
 
-	filter_status_msg_.level = diagnostic_msgs::msg::DiagnosticStatus::WARN; // WARN state
-	filter_status_msg_.message += warnmsg;
-	RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, warnmsg.c_str());
+		if (this->get_clock()->now() - last_rx_time < rclcpp::Duration(1, 0))
+		{
+			stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "System State packet timeout");
+			return;
+		}
+
+		stat.add("Orientation Filter Initialised", system_state_packet_->filter_status.b.orientation_filter_initialised ? "Yes" : "No");
+		stat.add("Navigation Filter Initialised", system_state_packet_->filter_status.b.ins_filter_initialised ? "Yes" : "No");
+		stat.add("Heading Initialised", system_state_packet_->filter_status.b.heading_initialised ? "Yes" : "No");
+		stat.add("UTC Time Initialised", system_state_packet_->filter_status.b.utc_time_initialised ? "Yes" : "No");
+		stat.add("Internal GNSS Enabled", system_state_packet_->filter_status.b.internal_gnss_enabled ? "Yes" : "No");
+		stat.add("Dual Antenna Heading Active", system_state_packet_->filter_status.b.dual_antenna_heading_active ? "Yes" : "No");
+		stat.add("Velocity Heading Enabled", system_state_packet_->filter_status.b.velocity_heading_enabled ? "Yes" : "No");
+		stat.add("Atmospheric Altitude Enabled", system_state_packet_->filter_status.b.atmospheric_altitude_enabled ? "Yes" : "No");
+		stat.add("External Position Active", system_state_packet_->filter_status.b.external_position_active ? "Yes" : "No");
+		stat.add("External Velocity Active", system_state_packet_->filter_status.b.external_velocity_active ? "Yes" : "No");
+		stat.add("External Heading Active", system_state_packet_->filter_status.b.external_heading_active ? "Yes" : "No");
+
+		// TODO parameters need to be added to inform what is considered abnormal operation
+
+		stat.summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "OK");
+	} else {
+		stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "System State packet not received");
+	}
 }
 
 //~~~~~~ Service Functions
@@ -1538,21 +1635,28 @@ void Driver::acknowledgeDecoder(an_packet_t* an_packet) {
  */
 void Driver::deviceInfoDecoder(an_packet_t* an_packet) {
 	// Decode packet and warn if error.
-	if(decode_device_information_packet(&device_information_packet_, an_packet))
-	 {
+	device_information_packet_t device_information_packet;
+	if(decode_device_information_packet(&device_information_packet, an_packet))
+	{
 		RCLCPP_WARN(this->get_logger(), "Error decoding device information Packet");
+	} else
+	{
+		std::stringstream serial_num;
+		serial_num << std::hex << device_information_packet.serial_number[0] <<
+			device_information_packet.serial_number[1] << device_information_packet.serial_number[2];
+		diagnostic_updater_->setHardwareID(serial_num.str());
+		device_information_packet_ = device_information_packet;
 	}
 	// since multiple packets may be requested before the device responds. ensure only one gets printed per second.
 	RCLCPP_INFO_STREAM_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Device Information:\n"
-			<< "Device ID: " <<	device_information_packet_.device_id <<
+			<< "Device ID: " <<	device_information_packet.device_id <<
 			"\nVersion:" <<
-			"\n  Software: " << device_information_packet_.software_version <<
-			"\n  Hardware: " << device_information_packet_.hardware_revision <<
-			"\nSerial Number: " << std::hex << device_information_packet_.serial_number[0] <<
-				device_information_packet_.serial_number[1] << device_information_packet_.serial_number[2]
+			"\n  Software: " << device_information_packet.software_version <<
+			"\n  Hardware: " << device_information_packet.hardware_revision <<
+			"\nSerial Number: " << std::hex << device_information_packet.serial_number[0] <<
+				device_information_packet.serial_number[1] << device_information_packet.serial_number[2]
 			<< std::endl
 			);
-
 }
 
 /**
@@ -1575,8 +1679,7 @@ void Driver::systemStateRosDecoder(an_packet_t* an_packet) {
 	if(decode_system_state_packet(&system_state_packet, an_packet) == 0)
 	 {
 			// NAVSATFIX
-			nav_fix_msg_.header.stamp.sec = system_state_packet.unix_time_seconds;
-			nav_fix_msg_.header.stamp.nanosec = system_state_packet.microseconds*1000;
+			nav_fix_msg_.header.stamp = time_from_state_packet(system_state_packet);
 			nav_fix_msg_.header.frame_id = frame_id_;
 			if ((system_state_packet.filter_status.b.gnss_fix_type == gnss_fix_2d) ||
 				(system_state_packet.filter_status.b.gnss_fix_type == gnss_fix_3d))
@@ -1628,9 +1731,7 @@ void Driver::systemStateRosDecoder(an_packet_t* an_packet) {
 			twist_stamped_msg_.header = nav_fix_msg_.header;
 
 			// IMU
-			imu_msg_.header.stamp.sec = system_state_packet.unix_time_seconds;
-			imu_msg_.header.stamp.nanosec = system_state_packet.microseconds*1000;
-			imu_msg_.header.frame_id = frame_id_;
+			imu_msg_.header = nav_fix_msg_.header;
 			// Using the RPY orientation as done by cosama
 			orientation_.setRPY(
 				system_state_packet.orientation[0],
@@ -1663,158 +1764,14 @@ void Driver::systemStateRosDecoder(an_packet_t* an_packet) {
 			geo_pose_stamped_msg_.pose = geo_pose_msg_;
 			geo_pose_stamped_msg_.header = nav_fix_msg_.header;
 
-			// SYSTEM STATUS
-			system_status_msg_.message = "";
-			system_status_msg_.level = diagnostic_msgs::msg::DiagnosticStatus::OK; // default OK state
-			std::stringstream serial_num;
-			serial_num << std::hex << device_information_packet_.serial_number[0] <<
-				device_information_packet_.serial_number[1] << device_information_packet_.serial_number[2];
-			system_status_msg_.hardware_id = serial_num.str();
-			if (system_state_packet.system_status.b.system_failure) {
-				ss << "\n0. SYSTEM FAILURE DETECTED.";
-			}
-			if (system_state_packet.system_status.b.accelerometer_sensor_failure) {
-				ss << "\n1. ACCELEROMETER SENSOR FAILURE.";
-			}
-			if (system_state_packet.system_status.b.gyroscope_sensor_failure) {
-				ss << "\n2. GYROSCOPE SENSOR FAILURE.";
-			}
-			if (system_state_packet.system_status.b.magnetometer_sensor_failure) {
-				ss << "\n3. MAGNETOMETER SENSOR FAILURE.";
-			}
-			if (system_state_packet.system_status.b.pressure_sensor_failure) {
-				ss << "\n4. PRESSURE SENSOR FAILURE.";
-			}
-			if (system_state_packet.system_status.b.gnss_failure) {
-				ss << "\n5. GNSS FAILURE.";
-			}
-			if (system_state_packet.system_status.b.accelerometer_over_range) {
-				ss << "\n6. ACCELEROMETER OVER RANGE.";
-			}
-			if (system_state_packet.system_status.b.gyroscope_over_range) {
-				ss << "\n7. GYROSCOPE OVER RANGE.";
-			}
-			if (system_state_packet.system_status.b.magnetometer_over_range) {
-				ss << "\n8. MAGNETOMETER OVER RANGE.";
-			}
-			if (system_state_packet.system_status.b.pressure_over_range) {
-				ss << "\n9. PRESSURE OVER RANGE.";
-			}
-			if (system_state_packet.system_status.b.minimum_temperature_alarm) {
-				ss << "\n10. MINIMUM TEMPERATURE ALARM.";
-			}
-			if (system_state_packet.system_status.b.maximum_temperature_alarm) {
-				ss << "\n11. MAXIMUM TEMPERATURE ALARM.";
-			}
-			if (system_state_packet.system_status.b.internal_data_logging_error) {
-				ss << "\n12. INTERNAL DATA LOGGING ERROR.";
-			}
-			if (system_state_packet.system_status.b.high_voltage_alarm) {
-				ss << "\n13. HIGH VOLTAGE ALARM.";
-			}
-			if (system_state_packet.system_status.b.gnss_antenna_fault) {
-				ss << "\n14. GNSS ANTENNA FAULT.";
-			}
-			if (system_state_packet.system_status.b.serial_port_overflow_alarm) {
-				ss << "\n15. SERIAL PORT DATA OVERFLOW.";
-			}
+			system_state_packet_ = system_state_packet;
 
-			// If an error occured log it
-			if(!ss.str().empty()) {
-				ss << std::endl;
-				statusErrLog(ss.str());
-				// empty the stringstream
-				ss.str("");
-			}
-
-			// FILTER STATUS
-			filter_status_msg_.message = "";
-			filter_status_msg_.level = diagnostic_msgs::msg::DiagnosticStatus::OK;; // default OK state
-			filter_status_msg_.hardware_id = serial_num.str();
-			if (system_state_packet.filter_status.b.orientation_filter_initialised) {
-				filter_status_msg_.message += "\n0. Orientation Filter Initialised.";
-			}
-			else {
-				 ss << "\n0. Orientation Filter NOT Initialised.";
-			}
-			if (system_state_packet.filter_status.b.ins_filter_initialised) {
-				filter_status_msg_.message += "\n1. Navigation Filter Initialised.";
-			}
-			else {
-				 ss << "\n1. Navigation Filter NOT Initialised.";
-			}
-			if (system_state_packet.filter_status.b.heading_initialised) {
-				filter_status_msg_.message += "\n2. Heading Initialised.";
-			}
-			else {
-				 ss << "\n2. Heading NOT Initialised.";
-			}
-			if (system_state_packet.filter_status.b.utc_time_initialised) {
-				filter_status_msg_.message += "\n3. UTC Time Initialised.";
-			}
-			else {
-				 ss << "\n3. UTC Time NOT Initialised.";
-			}
 			if (system_state_packet.filter_status.b.event1_flag) {
-				 ss << "\n7. Event 1 Occured.";
-			}
-			else {
-				filter_status_msg_.message += "\n7. Event 1 NOT Occured.";
-			}
-			if (system_state_packet.filter_status.b.event2_flag) {
-				 ss << "\n8. Event 2 Occured.";
-			}
-			else {
-				filter_status_msg_.message += "\n8. Event 2 NOT Occured.";
-			}
-			if (system_state_packet.filter_status.b.internal_gnss_enabled) {
-				filter_status_msg_.message += "\n9. Internal GNSS Enabled.";
-			}
-			else {
-				ss << "\n9. Internal GNSS NOT Enabled.";
-			}
-			if (system_state_packet.filter_status.b.dual_antenna_heading_active) {
-				filter_status_msg_.message += "\n10. Dual Antenna Heading Active.";
-			}
-			else {
-				ss << "\n10. Dual Antenna Heading NOT Active.";
-			}
-			if (system_state_packet.filter_status.b.velocity_heading_enabled) {
-				filter_status_msg_.message += "\n11. Velocity Heading Enabled.";
-			}
-			else {
-				ss << "\n11. Velocity Heading NOT Enabled.";
-			}
-			if (system_state_packet.filter_status.b.atmospheric_altitude_enabled) {
-				filter_status_msg_.message += "\n12. Atmospheric Altitude Enabled.";
-			}
-			else {
-				ss << "\n12. Atmospheric Altitude NOT Enabled.";
-			}
-			if (system_state_packet.filter_status.b.external_position_active) {
-				filter_status_msg_.message += "\n13. External Position Active.";
-			}
-			else {
-				ss << "\n13. External Position NOT Active.";
-			}
-			if (system_state_packet.filter_status.b.external_velocity_active) {
-				filter_status_msg_.message += "\n14. External Velocity Active.";
-			}
-			else {
-				ss << "\n14. External Velocity NOT Active.";
-			}
-			if (system_state_packet.filter_status.b.external_heading_active) {
-				filter_status_msg_.message += "\n15. External Heading Active.";
-			}
-			else {
-				ss << "\n16. External Heading NOT Active.";
+				RCLCPP_INFO(this->get_logger(), "Event 1 Occurred.");
 			}
 
-			// If a warning has occued log it
-			if(!ss.str().empty()) {
-				ss << std::endl;
-				statusWarnLog(ss.str());
-				ss.str("");
+			if (system_state_packet.filter_status.b.event2_flag) {
+				RCLCPP_INFO(this->get_logger(), "Event 1 Occurred.");
 			}
 	}
 	// Now that work is complete notify an update for the publisher.
@@ -1937,12 +1894,4 @@ void Driver::rawSensorsRosDecoder(an_packet_t* an_packet) {
 	auto diff = this->get_clock().get()->now().nanoseconds() - time;
 	RCLCPP_DEBUG(this->get_logger(), "Packet 28:\tMutex: U\tAccess: %d\tTimeLock: %ld μs", P28_num_++, diff/1000);
 }
-
-
-
 }// namespace adnav
-
-
-
-
-
