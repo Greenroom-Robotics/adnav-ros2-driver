@@ -28,6 +28,8 @@
 
 #include "adnav_driver.h"
 
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+
 namespace adnav {
 /**
  * @brief Constructor for the Advanced Navigation Driver node
@@ -513,7 +515,14 @@ void Driver::setupParams() {
 	commRange.step 		 = 1;
 	comms_select_description.integer_range.push_back(commRange);
 	this->declare_parameter<int>("comm_select", adnav::CONNECTION_SERIAL, comms_select_description);
-	comms_data_.method = (int) this->get_parameter("comm_select").as_int();
+	comms_data_.method = this->get_parameter("comm_select").as_int();
+
+	rcl_interfaces::msg::ParameterDescriptor convert_desc;
+	convert_desc.description = "Convert ENU Twist to FLU Twist.\n"
+		"  Default: false\n"
+		"  If true, the ENU Twist will be converted to FLU Twist before publishing.";
+	convert_desc.read_only = true;
+	convert_twist_enu_to_flu_ = this->declare_parameter<bool>("convert_twist_enu_to_flu", false, convert_desc);
 }
 
 //~~~~~~ Control Functions
@@ -1659,6 +1668,35 @@ void Driver::deviceInfoDecoder(an_packet_t* an_packet) {
 			);
 }
 
+        geometry_msgs::msg::Twist transformTwistEnuToFlu(
+            const geometry_msgs::msg::Twist & twist_enu,
+            const tf2::Quaternion & orientation)
+		{
+            // Inverse orientation to transform from ENU to FLU
+            tf2::Quaternion q_enu_to_flu = orientation.inverse();
+
+            tf2::Vector3 twist_vel, twist_angular;
+            tf2::fromMsg(twist_enu.linear, twist_vel);
+            tf2::fromMsg(twist_enu.angular, twist_angular);
+
+			twist_vel.setY(-twist_vel.y());
+			twist_vel.setZ(-twist_vel.z());
+
+            // Rotate the ENU twist into the FLU frame
+            tf2::Vector3 transformed_velocity = tf2::quatRotate(q_enu_to_flu, twist_vel);
+            tf2::Vector3 transformed_angular = tf2::quatRotate(q_enu_to_flu, twist_angular);
+
+            geometry_msgs::msg::Twist twist_flu;
+            twist_flu.linear.x = -transformed_velocity.y();
+            twist_flu.linear.y = transformed_velocity.x();
+            twist_flu.linear.z = transformed_velocity.z();
+            twist_flu.angular.x = -transformed_angular.y();
+            twist_flu.angular.y = transformed_angular.x();
+            twist_flu.angular.z = transformed_angular.z();
+
+            return twist_flu;
+    }
+
 /**
  * @brief Function to decode the System State ANPP Packet (ANPP.20).
  *
@@ -1720,6 +1758,14 @@ void Driver::systemStateRosDecoder(an_packet_t* an_packet) {
 			if(ntrip_client_.get() != nullptr) {
 				ntrip_client_->set_location(llh_.latitude, llh_.longitude, llh_.height);
 			}
+
+			// Using the RPY orientation as done by cosama
+			orientation_.setRPY(
+				system_state_packet.orientation[0],
+				system_state_packet.orientation[1],
+				M_PI/2.0f - system_state_packet.orientation[2] // REP 103
+			);
+
 			// TWIST
 			twist_msg_.linear.x = system_state_packet.velocity[0];
 			twist_msg_.linear.y = system_state_packet.velocity[1];
@@ -1727,17 +1773,17 @@ void Driver::systemStateRosDecoder(an_packet_t* an_packet) {
 			twist_msg_.angular.x = system_state_packet.angular_velocity[0];
 			twist_msg_.angular.y = system_state_packet.angular_velocity[1];
 			twist_msg_.angular.z = system_state_packet.angular_velocity[2];
+
+			if (convert_twist_enu_to_flu_) {
+				twist_msg_ = transformTwistEnuToFlu(twist_msg_, orientation_);
+			}
+
 			twist_stamped_msg_.twist = twist_msg_;
 			twist_stamped_msg_.header = nav_fix_msg_.header;
 
 			// IMU
 			imu_msg_.header = nav_fix_msg_.header;
-			// Using the RPY orientation as done by cosama
-			orientation_.setRPY(
-				system_state_packet.orientation[0],
-				system_state_packet.orientation[1],
-				M_PI/2.0f - system_state_packet.orientation[2] // REP 103
-			);
+
 			imu_msg_.orientation.x = orientation_[0];
 			imu_msg_.orientation.y = orientation_[1];
 			imu_msg_.orientation.z = orientation_[2];

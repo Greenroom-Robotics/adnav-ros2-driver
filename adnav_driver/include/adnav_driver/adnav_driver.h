@@ -145,6 +145,9 @@ class Driver : public rclcpp::Node  // Inheriting gives every "this->" as a poin
     // String to hold frame_id
     std::string frame_id_ = "imu_link";
 
+    // Whether to convert twist from ENU to FLU
+    bool convert_twist_enu_to_flu_ = false;
+
     // device communication settings
     std::unique_ptr<adnav::Communicator> communicator_;
     adnav_connections_data_t comms_data_;

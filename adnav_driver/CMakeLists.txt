@@ -30,6 +30,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(geographic_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(tf2 REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 find_package(adnav_interfaces REQUIRED)
 
 # Build
@@ -54,6 +55,7 @@ set(DEPENDENCIES
   "diagnostic_updater"
   "geometry_msgs"
   "tf2"
+  "tf2_geometry_msgs"
   "adnav_interfaces"
   "geographic_msgs"
 )
