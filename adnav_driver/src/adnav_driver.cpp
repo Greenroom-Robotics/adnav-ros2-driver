@@ -95,19 +95,22 @@ Driver::Driver(): rclcpp::Node("adnav_driver"), msg_write_done_(false)
  * Closes the Logfiles and gives name to the user. Shutsdown the communication method
  */
 Driver::~Driver() {
-	RCLCPP_INFO(this->get_logger(), "Destructing Adnav_Driver node");
+	RCLCPP_INFO(this->get_logger(), "Deconstructing Adnav_Driver node");
 
 	anpp_logger_.closeFile();
 
 	// if the Ntrip client is initialised and running or the logger is open.
-	if (ntrip_client_.get() != nullptr && (ntrip_client_->service_running() || rtcm_logger_.is_open())) {
+	if (ntrip_client_ && (ntrip_client_->service_running() || rtcm_logger_.is_open())) {
 		ntrip_client_->stop();
 
 		// Close the logfile
 		rtcm_logger_.closeFile();
 	}
 
-	communicator_->close();
+	if (communicator_)
+	{
+		communicator_->close();
+	}
 }
 
 rclcpp::Time time_from_state_packet(const system_state_packet_t& state_packet) {
